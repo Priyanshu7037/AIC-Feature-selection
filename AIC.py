@@ -9,11 +9,17 @@ import matplotlib.pyplot as plt
 
 # ------------------ Utilities ------------------
 def calculate_aic(y_true, y_pred, k, eps=1e-12):
-    """AIC = n * ln(RSS/n) + 2k"""
+    """Full Gaussian log-likelihood AIC"""
     n = len(y_true)
     rss = np.sum((y_true - y_pred) ** 2)
     rss = max(rss, eps)  # avoid log(0)
-    return n * np.log(rss / n) + 2 * k
+    
+    # Full log-likelihood
+    logL = -0.5 * n * (np.log(2 * np.pi) + np.log(rss / n) + 1)
+    
+    # AIC
+    aic = 2 * k - 2 * logL
+    return aic
 
 
 def fit_model(df, target, features):
@@ -201,3 +207,4 @@ if uploaded_file:
 
 else:
     st.info("Upload an Excel file to get started.")
+
