@@ -219,6 +219,8 @@ if df is not None:
                     label = row["Added"] if pd.notna(row["Added"]) else f"-{row['Removed']}"
                     ax.annotate(label, (row["Step"], row["AIC"]), xytext=(0, 6),
                                 textcoords="offset points", ha="center", fontsize=8)
+                    
+                ax.xaxis.set_major_locator(mticker.MaxNLocator(integer=True))
                 ax.set_xlabel("Step")
                 ax.set_ylabel("AIC")
                 ax.set_title(f"AIC vs Steps ({method})")
@@ -229,3 +231,4 @@ if df is not None:
                 best_row = records[best_idx]
                 st.write("### Best Subset")
                 st.write(f"Step {best_row['step']} | Features: {', '.join(best_row['selected_features'])} | AIC = {best_row['aic']:.3f}")
+
