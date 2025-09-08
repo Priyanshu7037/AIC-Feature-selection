@@ -3,9 +3,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import r2_score, mean_squared_error
 import matplotlib.pyplot as plt
-
+from io import BytesIO
 
 # ------------------ Utilities ------------------
 def calculate_aic(y_true, y_pred, k, eps=1e-12):
@@ -13,14 +12,9 @@ def calculate_aic(y_true, y_pred, k, eps=1e-12):
     n = len(y_true)
     rss = np.sum((y_true - y_pred) ** 2)
     rss = max(rss, eps)  # avoid log(0)
-    
-    # Full log-likelihood
     logL = -0.5 * n * (np.log(2 * np.pi) + np.log(rss / n) + 1)
-    
-    # AIC
     aic = 2 * k - 2 * logL
     return aic
-
 
 def fit_model(df, target, features):
     """Fit linear regression, return model, aic."""
@@ -32,9 +26,8 @@ def fit_model(df, target, features):
     aic = calculate_aic(y, y_pred, k)
     return model, aic, y_pred
 
-
+# Stepwise selection functions
 def forward_selection(df, target, predictors):
-    """Forward stepwise AIC."""
     remaining = predictors.copy()
     selected = []
     records = []
@@ -60,9 +53,7 @@ def forward_selection(df, target, predictors):
         })
     return records
 
-
 def backward_elimination(df, target, predictors):
-    """Backward stepwise AIC."""
     selected = predictors.copy()
     records = []
     while len(selected) > 0:
@@ -87,26 +78,20 @@ def backward_elimination(df, target, predictors):
         })
     return records
 
-
 def bidirectional_selection(df, target, predictors):
-    """Bidirectional (stepwise) AIC selection."""
     selected = []
     remaining = predictors.copy()
     records = []
     improved = True
-
     while improved:
         improved = False
-        y = df[target].values
-
-        # ---- Forward step ----
+        # Forward step
         best_feat, best_aic, best_model, best_pred = None, np.inf, None, None
         for feat in remaining:
             candidate = selected + [feat]
             model, aic, y_pred = fit_model(df, target, candidate)
             if aic < best_aic:
                 best_feat, best_aic, best_model, best_pred = feat, aic, model, y_pred
-
         if best_feat and (not records or best_aic < records[-1]["aic"]):
             selected.append(best_feat)
             remaining.remove(best_feat)
@@ -120,15 +105,13 @@ def bidirectional_selection(df, target, predictors):
                 "y_pred": best_pred
             })
             improved = True
-
-        # ---- Backward step ----
+        # Backward step
         worst_feat, best_aic, best_model, best_pred = None, np.inf, None, None
         for feat in selected:
             candidate = [f for f in selected if f != feat]
             model, aic, y_pred = fit_model(df, target, candidate)
             if aic < best_aic:
                 worst_feat, best_aic, best_model, best_pred = feat, aic, model, y_pred
-
         if worst_feat and best_aic < records[-1]["aic"]:
             selected.remove(worst_feat)
             records.append({
@@ -141,19 +124,64 @@ def bidirectional_selection(df, target, predictors):
                 "y_pred": best_pred
             })
             improved = True
-
     return records
 
+# ------------------ Demo Dataset ------------------
+def generate_demo_dataset(n_samples=100, n_features=20, n_true=5, random_state=42):
+    """
+    Generate synthetic dataset for demo:
+    - n_true variables actually affect the target.
+    - Rest are pure noise.
+    """
+    np.random.seed(random_state)
+    X = np.random.randn(n_samples, n_features)
+    
+    # Only first n_true features are true predictors
+    coefs = np.zeros(n_features)
+    coefs[:n_true] = np.random.randn(n_true) * 2  # stronger signal for true variables
+    
+    y = X @ coefs + 0.5 * np.random.randn(n_samples)  # add noise
+    columns = [f"X{i+1}" for i in range(n_features)]
+    df = pd.DataFrame(X, columns=columns)
+    df["Target"] = y
+    return df
+
+
+def to_excel(df):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Sheet1')
+    processed_data = output.getvalue()
+    return processed_data
 
 # ------------------ Streamlit UI ------------------
 st.set_page_config(layout="wide", page_title="Stepwise AIC Feature Selection")
 st.title("AIC-based Feature Selection")
 
 uploaded_file = st.file_uploader("Upload Excel dataset (.xlsx)", type=["xlsx"])
+use_demo = False
+
 if uploaded_file:
     df = pd.read_excel(uploaded_file)
     st.success("File uploaded successfully.")
+elif st.checkbox("Use built-in demo dataset"):
+    df = generate_demo_dataset()
+    st.info("Using built-in demo dataset with 20 input variables.")
+    use_demo = True
+else:
+    st.info("Upload an Excel file or select the demo dataset to get started.")
+    df = None
+
+if df is not None:
     st.write("### Dataset Preview", df.head())
+
+    if use_demo:
+        st.download_button(
+            label="Download Demo Dataset as Excel",
+            data=to_excel(df),
+            file_name="demo_dataset.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
     if len(numeric_cols) >= 2:
@@ -175,7 +203,6 @@ if uploaded_file:
             if not records:
                 st.error("No selection steps performed.")
             else:
-                # Results table
                 table = pd.DataFrame([{
                     "Step": r["step"],
                     "Added": r["added_feature"],
@@ -186,7 +213,6 @@ if uploaded_file:
                 st.write("### Stepwise Results")
                 st.dataframe(table)
 
-                # Plot AIC
                 fig, ax = plt.subplots(figsize=(8, 4))
                 ax.plot(table["Step"], table["AIC"], marker="o")
                 for i, row in table.iterrows():
@@ -199,12 +225,7 @@ if uploaded_file:
                 ax.grid(True)
                 st.pyplot(fig)
 
-                # Best step
                 best_idx = int(np.argmin(table["AIC"]))
                 best_row = records[best_idx]
                 st.write("### Best Subset")
                 st.write(f"Step {best_row['step']} | Features: {', '.join(best_row['selected_features'])} | AIC = {best_row['aic']:.3f}")
-
-else:
-    st.info("Upload an Excel file to get started.")
-
