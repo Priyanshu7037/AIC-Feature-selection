@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 from io import BytesIO
 
 # ------------------ Utilities ------------------
@@ -231,4 +232,5 @@ if df is not None:
                 best_row = records[best_idx]
                 st.write("### Best Subset")
                 st.write(f"Step {best_row['step']} | Features: {', '.join(best_row['selected_features'])} | AIC = {best_row['aic']:.3f}")
+
 
